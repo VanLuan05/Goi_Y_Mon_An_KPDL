@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giỏ hàng HUIT - Hệ thống gợi ý</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        .suggestion-box {
+            border-left: 5px solid #0d6efd;
+            background-color: #f0f7ff;
+        }
+        .confidence-tag {
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body class="bg-light">
+    <div class="container mt-5 mb-5">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-primary text-white py-3">
+                        <h4 class="mb-0">🛒 Sản phẩm trong giỏ hàng</h4>
+                    </div>
+                    <div class="card-body p-4">
+                        {% if cart %}
+                        <ul class="list-group list-group-flush">
+                            {% for item in cart %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-3">
+                                <div>
+                                    <h6 class="mb-0 text-uppercase">{{ item }}</h6>
+                                    <small class="text-muted">Số lượng: 1</small>
+                                </div>
+                                <span class="badge bg-success rounded-pill">Đã chọn</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <div class="text-center py-5">
+                            <h5 class="text-muted">Giỏ hàng của bạn đang trống!</h5>
+                            <a href="/" class="btn btn-primary mt-3">Quay lại mua sắm ngay</a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="mt-4 d-flex justify-content-between">
+                    <a href="/" class="btn btn-outline-secondary">← Tiếp tục mua sắm</a>
+                    {% if cart %}
+                    <a href="/clear_cart" class="btn btn-outline-danger">Xóa giỏ hàng</a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-header bg-warning text-dark py-3">
+                        <h5 class="mb-0 fw-bold">Gợi ý cho bạn</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if session['last_suggestions'] %}
+                            <p class="small text-muted mb-3">Dựa trên sản phẩm <strong>{{ session['added_item'] }}</strong> bạn vừa thêm, hãy xem thử:</p>
+                            <div class="list-group list-group-flush">
+                                {% for s in session['last_suggestions'] %}
+                                <div class="list-group-item px-0 border-0 mb-2 suggestion-box p-2 rounded shadow-sm">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="small fw-bold text-uppercase">{{ s.consequents }}</span>
+                                        <span class="badge bg-info text-dark confidence-tag">Tin cậy: {{ (s.confidence * 100)|round(0) }}%</span>
+                                    </div>
+                                    <button class="btn btn-sm btn-link p-0 mt-1 text-decoration-none">+ Thêm nhanh</button>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted small">Thêm sản phẩm vào giỏ để nhận gợi ý thông minh từ hệ thống khai thác dữ liệu của HUIT!</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card shadow-sm border-0">
+                    <div class="card-body">
+                        <h5 class="fw-bold mb-3">Tổng cộng</h5>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Số lượng món:</span>
+                            <span class="fw-bold">{{ cart|length }}</span>
+                        </div>
+                        <hr>
+                        <button class="btn btn-success btn-lg w-100 fw-bold" 
+                                onclick="alert('Giao dịch đã được ghi nhận vào kho tri thức của hệ thống!')">
+                            XÁC NHẬN THANH TOÁN
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
