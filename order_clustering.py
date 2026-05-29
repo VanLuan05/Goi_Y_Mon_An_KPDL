@@ -5,36 +5,35 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from db_helper import DatabaseHelper
 from sklearn.cluster import KMeans
-
+from sqlalchemy import types
 def execute_clustering():
     """
     Thực hiện thuật toán K-Means gom cụm hành vi mua sắm từ lịch sử hóa đơn.
-    Áp dụng kiến thức Chương IV & V tài liệu HUIT.
+    Đã sửa lỗi lệch index tên cụm để đồng bộ hoàn hảo với hệ thống.
     """
     db = DatabaseHelper()
     
     # 1. Thu thập dữ liệu tổng hợp theo từng Hóa đơn (BillNo)
     print("--- Đang tải dữ liệu hóa đơn từ SQL Server... ---")
-    # SỬA LẠI TRONG FILE order_clustering.py
     query = """
         SELECT BillNo, 
-           COUNT(Itemname) as TotalQuantity, 
-           SUM(Quantity * Price) as TotalSpent
-    FROM CleanedTransactions
-    GROUP BY BillNo
+               COUNT(Itemname) as TotalQuantity, 
+               SUM(Price) as TotalSpent
+        FROM CleanedTransactions
+        GROUP BY BillNo
     """
     df_orders = db.fetch_data(query)
     
     if df_orders.empty or len(df_orders) < 3:
         return {"error": "Dữ liệu hóa đơn quá ít, không thể phân cụm."}
         
-    # Loại bỏ các hóa đơn ngoại lai quá lớn (outliers) để thuật toán K-Means phân cụm đẹp hơn
-    df_orders = df_orders[(df_orders['TotalQuantity'] < 2000) & (df_orders['TotalSpent'] < 5000)]
+    # Loại bỏ các hóa đơn ngoại lai quá lớn (outliers) giúp đồ thị phân cụm đẹp mắt hơn
+    df_orders = df_orders[(df_orders['TotalQuantity'] < 100) & (df_orders['TotalSpent'] < 500)]
     
     # 2. Chuẩn bị đặc trưng đưa vào mô hình (X)
     X = df_orders[['TotalQuantity', 'TotalSpent']].values
     
-    # 3. Khởi chạy thuật toán K-Means với K = 3 cụm hành vi mẫu
+    # 3. Khởi chạy thuật toán K-Means với K = 3 cụm
     print("--- Đang tiến hành phân cụm dữ liệu bằng K-Means... ---")
     start_time = time.time()
     kmeans = KMeans(n_clusters=3, init='k-means++', random_state=42, n_init=10)
@@ -44,7 +43,7 @@ def execute_clustering():
     # Lấy tọa độ tâm của các cụm (Centroids)
     centroids = kmeans.cluster_centers_
     
-    # Định nhãn tên cụm thông minh dựa trên vị trí giá trị chi tiêu của tâm cụm
+    # Định nhãn tên cụm chính xác dựa trên giá trị chi tiêu tăng dần của tâm cụm
     cluster_order = np.argsort(centroids[:, 1]) # Sắp xếp theo thứ tự chi tiêu tăng dần
     cluster_mapping = {
         cluster_order[0]: "Mua sắm Tiết kiệm (Giỏ nhỏ)",
@@ -63,7 +62,7 @@ def execute_clustering():
         plt.scatter(cluster_data['TotalQuantity'], cluster_data['TotalSpent'], 
                     label=cluster_mapping[cluster_id], alpha=0.6, s=15, c=colors[cluster_id])
                     
-    # Vẽ các điểm tâm cụm (Centroids) lên đồ thị bằng dấu X màu đỏ nổi bật
+    # Vẽ các điểm tâm cụm (Centroids) bằng dấu X màu đỏ nổi bật
     plt.scatter(centroids[:, 0], centroids[:, 1], s=150, c='red', marker='X', label='Tâm cụm (Centroid)')
     
     plt.title('Biểu đồ phân cụm Hành vi mua sắm Khách hàng (K-Means Clustering)', fontsize=14, fontweight='bold')
@@ -74,26 +73,26 @@ def execute_clustering():
     plt.savefig('shopping_clusters.png', dpi=300)
     plt.close()
     
-    # 5. Lưu trữ tọa độ tâm cụm vào CSDL SQL Server để phục vụ tính khoảng cách ở Backend
-    df_centroids = pd.DataFrame({
-        'ClusterID': list(cluster_mapping.keys()),
-        'ClusterName': list(cluster_mapping.values()),
-        'Centroid_Qty': centroids[:, 0],
-        'Centroid_Spent': centroids[:, 1]
-    })
+    # 5. Đồng bộ kết quả phân cụm (Cluster Centroids) vào bảng ClusterCentroids trong SQL Server
+    centroid_list = []
+    for cluster_id in range(3):
+        centroid_list.append({
+            'ClusterID': cluster_id,
+            'ClusterName': cluster_mapping[cluster_id],
+            'Centroid_Qty': float(centroids[cluster_id, 0]),
+            'Centroid_Spent': float(centroids[cluster_id, 1])
+        })
+    df_centroids = pd.DataFrame(centroid_list)
     
     try:
         engine = db.get_engine()
-        df_centroids.to_sql('ClusterCentroids', con=engine, if_exists='replace', index=False)
+        
+        sql_types = {
+            'ClusterName': types.NVARCHAR(length=100)
+        }
+        
+        # Thêm tham số dtype=sql_types vào lệnh to_sql
+        df_centroids.to_sql('ClusterCentroids', con=engine, if_exists='replace', index=False, dtype=sql_types)
         print("--- ĐÃ ĐỒNG BỘ TÂM CỤM K-MEANS VÀO SQL SERVER THÀNH CÔNG! ---")
     except Exception as e:
         print(f"Lỗi khi lưu tâm cụm: {e}")
-        
-    return {
-        "execution_time": round(end_time - start_time, 4),
-        "status": "Phân cụm hành vi bằng K-Means thành công!",
-        "centroids": df_centroids.to_dict(orient='records')
-    }
-
-if __name__ == '__main__':
-    print(execute_clustering())

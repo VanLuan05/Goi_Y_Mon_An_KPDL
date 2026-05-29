@@ -1,3 +1,5 @@
+import numpy as np
+
 from db_helper import DatabaseHelper
 
 class RecommendationService:
@@ -86,28 +88,14 @@ class RecommendationService:
     def classify_live_cart(self, cart_items):
         """
         Dự báo phân cụm hành vi cho Giỏ hàng hiện tại dựa trên khoảng cách Euclidean đến các tâm cụm.
-        Áp dụng công thức tính toán khoảng cách Chương III & IV bài giảng.
         """
         if not cart_items:
             return "Giỏ hàng trống"
             
-        # 1. Tính toán giá trị đặc trưng hiện tại của giỏ hàng
-        # Lấy giá của các món ăn từ DB để tính tổng số tiền
-        cart_set = ["'" + str(item).replace("'", "''") + "'" for item in cart_items]
-        query = f"SELECT Itemname, Price FROM CleanedTransactions WHERE Itemname IN ({','.join(cart_set)})"
-        
-        total_qty = len(cart_items) # Đặc trưng 1: Tổng số lượng
-        total_spent = 0.0           # Đặc trưng 2: Tổng giá trị tiền
-        
-        try:
-            df_prices = self.db.fetch_data(query)
-            price_map = pd.Series(df_prices.Price.values, index=df_prices.Itemname).to_dict()
-            for item in cart_items:
-                total_spent += price_map.get(item.upper().strip(), 15.0) # Nếu không có giá mặc định là 15$
-        except Exception:
-            total_spent = total_qty * 15.0
+        total_qty = len(cart_items) 
+        global_avg_price = 3.0 
+        total_spent = total_qty * global_avg_price
             
-        # 2. Tải tọa độ 3 tâm cụm K-Means từ bảng ClusterCentroids lên bộ nhớ
         try:
             df_centroids = self.db.fetch_data("SELECT * FROM ClusterCentroids")
             if df_centroids.empty:
@@ -116,14 +104,13 @@ class RecommendationService:
             best_cluster = None
             min_distance = float('inf')
             
-            # 3. Áp dụng Công thức Euclidean đo khoảng cách: Căn bậc hai của tổng bình phương hiệu tọa độ
+            # Tính toán khoảng cách Euclidean
             for _, row in df_centroids.iterrows():
                 dist = np.sqrt(
                     (total_qty - row['Centroid_Qty'])**2 + 
                     (total_spent - row['Centroid_Spent'])**2
                 )
                 
-                # Tìm tâm cụm có khoảng cách ngắn nhất đến giỏ hàng
                 if dist < min_distance:
                     min_distance = dist
                     best_cluster = row['ClusterName']
