@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, session, redirect, url_for, jsonify
 from db_helper import DatabaseHelper
 from recommendation_service import RecommendationService
+from fp_growth_mining import execute_mining
+from order_clustering import execute_clustering
+
 
 app = Flask(__name__)
 app.secret_key = 'huit_datamining_project_2026'
@@ -8,16 +11,34 @@ app.secret_key = 'huit_datamining_project_2026'
 db = DatabaseHelper()
 rec_service = RecommendationService()
 
+@app.route('/admin/cluster', methods=['POST'])
+def admin_cluster():
+    """API Endpoint ra lệnh chạy thuật toán K-Means trực tuyến từ trang Admin"""
+    result = execute_clustering()
+    return jsonify(result)
+
 @app.route('/')
 def index():
     try:
-        # Lấy danh sách 12 sản phẩm tiêu biểu hiển thị lên trang chủ giao diện
-        query_products = "SELECT DISTINCT TOP 12 Itemname, Price FROM CleanedTransactions WHERE Itemname IS NOT NULL"
+        # BẢN NÂNG CẤP: Chỉ lấy 12 sản phẩm nào THỰC SỰ CÓ LUẬT trong bảng ProductRules 
+        # Giúp đảm bảo khi demo, người dùng click vào bất kỳ món nào cũng hiện tri thức thật
+        query_products = """
+            SELECT DISTINCT TOP 12 t.Itemname, t.Price 
+            FROM CleanedTransactions t
+            INNER JOIN ProductRules r ON r.antecedents = t.Itemname
+            WHERE t.Itemname IS NOT NULL
+        """
         df_products = db.fetch_data(query_products)
+        
+        # Nếu bảng luật mới chạy lại chưa đủ hoặc có vấn đề, dùng cơ chế dự phòng lấy sản phẩm thường
+        if df_products.empty or len(df_products) < 12:
+            query_fallback = "SELECT DISTINCT TOP 12 Itemname, Price FROM CleanedTransactions WHERE Itemname IS NOT NULL"
+            df_products = db.fetch_data(query_fallback)
+
         df_products['Price'] = df_products['Price'].round(2)
         products = df_products.to_dict(orient='records')
 
-        # Thống kê tổng số bản ghi phục vụ thanh trạng thái
+        # Thống kê tổng số bản ghi phục vụ thanh trạng thái dưới chân trang
         query_count = "SELECT COUNT(*) as total FROM CleanedTransactions"
         total_cleaned = db.fetch_data(query_count).iloc[0]['total']
         
@@ -59,20 +80,55 @@ def add_to_cart():
 
 @app.route('/cart')
 def view_cart():
-    """Trang xem chi tiết giỏ hàng và gợi ý chốt đơn bổ trợ"""
+    """Trang xem chi tiết giỏ hàng và hiển thị kết quả phân cụm K-Means thực tế"""
     cart = session.get('cart', [])
-    # Đồng bộ gợi ý tập con ngay tại trang giỏ hàng
+    
+    # GỌI NÂNG CẤP CÁCH 2: Phân nhóm hành vi giỏ hàng bằng mô hình gom cụm
+    cart_cluster = rec_service.classify_live_cart(cart)
+    
     suggestions = rec_service.get_suggestions(cart, limit=4)
     is_fallback = False
     if not suggestions and cart:
         suggestions = rec_service.get_top_selling(limit=3)
         is_fallback = True
-    return render_template('cart.html', cart=cart, suggestions=suggestions, is_fallback=is_fallback)
+        
+    return render_template('cart.html', 
+                           cart=cart, 
+                           suggestions=suggestions, 
+                           is_fallback=is_fallback,
+                           cart_cluster=cart_cluster) # Truyền nhãn phân cụm sang giao diện
 
 @app.route('/clear_cart')
 def clear_cart():
     session.pop('cart', None)
     return redirect(url_for('index'))
 
+@app.route('/admin')
+def admin_dashboard():
+    """Trang giao diện Admin cấu hình thuật toán chuyên sâu"""
+    try:
+        # Lấy số lượng luật hiện tại đang có trong hệ thống để hiển thị lên bảng điều khiển
+        query_rules_count = "SELECT COUNT(*) as total FROM ProductRules"
+        rules_count = db.fetch_data(query_rules_count).iloc[0]['total']
+    except Exception:
+        rules_count = 0
+        
+    return render_template('admin.html', rules_count=rules_count)
+
+@app.route('/admin/re_mine', methods=['POST'])
+def admin_re_mine():
+    """API Endpoint nhận lệnh AJAX chạy lại thuật toán FP-Growth trực tuyến"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Dữ liệu không hợp lệ'}), 400
+        
+    # Lấy các tham số động từ thanh kéo slider của người dùng gửi lên
+    min_support = float(data.get('min_support', 0.015))
+    min_confidence = float(data.get('min_confidence', 0.5))
+    
+    # Kích hoạt hàm xử lý thuật toán cốt lõi
+    result = execute_mining(min_support, min_confidence)
+    
+    return jsonify(result)
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
