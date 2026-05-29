@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, session, redirect, url_for
+from flask import Flask, render_template, request, session, redirect, url_for, jsonify
 from db_helper import DatabaseHelper
 from recommendation_service import RecommendationService
 
@@ -11,85 +11,67 @@ rec_service = RecommendationService()
 @app.route('/')
 def index():
     try:
-        # TỐI ƯU: Chỉ lấy những sản phẩm nào thực sự có luật gợi ý để demo luôn hiện Modal
-        query_products = """
-            SELECT DISTINCT TOP 12 Itemname, Price 
-            FROM CleanedTransactions 
-            WHERE Itemname IN (SELECT DISTINCT antecedents FROM ProductRules)
-        """
+        # Lấy danh sách 12 sản phẩm tiêu biểu hiển thị lên trang chủ giao diện
+        query_products = "SELECT DISTINCT TOP 12 Itemname, Price FROM CleanedTransactions WHERE Itemname IS NOT NULL"
         df_products = db.fetch_data(query_products)
-        
-        # Nếu bảng luật ít sản phẩm quá không đủ 12 món, thì lấy thêm sản phẩm thường bù vào
-        if len(df_products) < 12:
-            query_fallback = "SELECT DISTINCT TOP 12 Itemname, Price FROM CleanedTransactions WHERE Itemname IS NOT NULL"
-            df_products = db.fetch_data(query_fallback)
-
         df_products['Price'] = df_products['Price'].round(2)
         products = df_products.to_dict(orient='records')
 
-        # Thống kê số lượng bản ghi sạch (Minh chứng Tuần 2)
+        # Thống kê tổng số bản ghi phục vụ thanh trạng thái
         query_count = "SELECT COUNT(*) as total FROM CleanedTransactions"
         total_cleaned = db.fetch_data(query_count).iloc[0]['total']
         
-        # Lấy gợi ý và tên món vừa thêm từ session
-        last_suggestions = session.get('last_suggestions', [])
-        added_item = session.get('added_item', None)
-        
-        return render_template('index.html', 
-                               products=products, 
-                               total_cleaned=total_cleaned,
-                               suggestions=last_suggestions,
-                               added_item=added_item)
+        return render_template('index.html', products=products, total_cleaned=total_cleaned)
     except Exception as e:
-        return f"Lỗi hệ thống: {e}"
+        return f"Lỗi hệ thống khởi chạy: {e}"
 
 @app.route('/add_to_cart', methods=['POST'])
 def add_to_cart():
-    product_name = request.form.get('product_name')
+    """API Endpoint tiếp nhận request AJAX - Trả về JSON, hoàn toàn không reload trang"""
+    data = request.get_json()
+    if not data or 'product_name' not in data:
+        return jsonify({'error': 'Dữ liệu đầu vào không hợp lệ'}), 400
+        
+    product_name = data['product_name']
     
-    # 1. Quản lý giỏ hàng
     if 'cart' not in session:
         session['cart'] = []
     cart = session['cart']
     cart.append(product_name)
     session['cart'] = cart
     
-    # 2. KHAI THÁC TRI THỨC (Nâng cấp)
-    # Bước A: Tìm gợi ý từ luật Apriori
-    suggestions = rec_service.get_suggestions(product_name)
+    # KHAI THÁC TRI THỨC: Truyền toàn bộ cấu trúc giỏ hàng hiện tại để quét luật tập con
+    suggestions = rec_service.get_suggestions(cart, limit=3)
+    is_fallback = False
     
-    # Bước B: Nếu không có luật Apriori (suggestions rỗng), hãy lấy Top sản phẩm bán chạy (Dự phòng)
+    # Nếu không tìm thấy luật thỏa mãn điều kiện tập con, kích hoạt hệ thống dự phòng bán chạy
     if not suggestions:
-        print(f"DEBUG: Khong tim thay luat cho {product_name}, dang lay Top ban chay...")
         suggestions = rec_service.get_top_selling(limit=3)
-        # Sửa lại tên hiển thị một chút để giảng viên biết đây là gợi ý xu hướng
-        session['is_fallback'] = True 
-    else:
-        session['is_fallback'] = False
+        is_fallback = True
 
-    print(f"DEBUG: San pham them: {product_name}")
-    print(f"DEBUG: Goi y tra ve: {suggestions}")
-    
-    # 3. Lưu vào session để hiển thị Modal
-    session['last_suggestions'] = suggestions
-    session['added_item'] = product_name 
-    
-    return redirect(url_for('index'))
+    # Trả dữ liệu về cho khối lệnh JavaScript AJAX xử lý
+    return jsonify({
+        'cart_length': len(cart),
+        'added_item': product_name,
+        'suggestions': suggestions,
+        'is_fallback': is_fallback
+    })
 
 @app.route('/cart')
 def view_cart():
-    """Trang giỏ hàng"""
+    """Trang xem chi tiết giỏ hàng và gợi ý chốt đơn bổ trợ"""
     cart = session.get('cart', [])
-    # Truyền thêm suggestions vào cart để trang giỏ hàng cũng hiện gợi ý
-    last_suggestions = session.get('last_suggestions', [])
-    return render_template('cart.html', cart=cart, suggestions=last_suggestions)
+    # Đồng bộ gợi ý tập con ngay tại trang giỏ hàng
+    suggestions = rec_service.get_suggestions(cart, limit=4)
+    is_fallback = False
+    if not suggestions and cart:
+        suggestions = rec_service.get_top_selling(limit=3)
+        is_fallback = True
+    return render_template('cart.html', cart=cart, suggestions=suggestions, is_fallback=is_fallback)
 
 @app.route('/clear_cart')
 def clear_cart():
     session.pop('cart', None)
-    session.pop('last_suggestions', None)
-    session.pop('added_item', None)
-    session.pop('is_fallback', None)
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
