@@ -55,6 +55,7 @@ def execute_mining(min_support_val=0.015, min_confidence_val=0.5):
 
     # 3. Xuất file CSV
     if rules_count > 0:
+        # xuất Top 50 cho báo cáo đồ án
         top_50_rules = rules.head(50).copy()
         top_50_rules['antecedents_str'] = top_50_rules['antecedents'].apply(lambda x: ', '.join(list(x)))
         top_50_rules['consequents_str'] = top_50_rules['consequents'].apply(lambda x: ', '.join(list(x)))

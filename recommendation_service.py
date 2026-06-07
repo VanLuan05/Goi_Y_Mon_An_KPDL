@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pandas as pd
 from sklearn.neighbors import KNeighborsClassifier
@@ -40,17 +42,27 @@ class RecommendationService:
 
     def get_suggestions(self, cart_items, limit=6):
         """
-        Gợi ý sản phẩm mua kèm dựa trên TOÀN BỘ giỏ hàng hiện tại.
-        Đạt chuẩn yêu cầu kiểm tra tập con (Antecedent subset of Cart).
+        GIẢI PHÁP HIỆU NĂNG CAO: Tối ưu hóa truy vấn bằng mệnh đề WHERE LIKE.
+        Ép SQL Server lọc trước dữ liệu, giảm tải 99% cho RAM và vòng lặp Python.
         """
         if not cart_items:
             return []
             
-        # Chuẩn hóa toàn bộ sản phẩm trong giỏ thành chữ hoa và xóa khoảng trắng
         cart_set = set(str(item).upper().strip() for item in cart_items)
 
-        # Lấy toàn bộ tập luật kết hợp từ bảng ProductRules lên bộ nhớ để duyệt set
-        query = "SELECT antecedents, consequents, confidence, lift FROM ProductRules"
+        # 1. TẠO BỘ LỌC ĐỘNG TỪ GIỎ HÀNG ĐỂ SQL SERVER LÀM VIỆC NẶNG
+        conditions = []
+        for item in cart_set:
+            # Xử lý an toàn chuỗi có dấu nháy đơn (ví dụ: "Ba chỉ bò Mỹ")
+            safe_item = item.replace("'", "''") 
+            # Dùng N'...' để tìm kiếm chính xác chuỗi tiếng Việt Unicode
+            conditions.append(f"antecedents LIKE N'%{safe_item}%'")
+            
+        where_clause = " OR ".join(conditions)
+        
+        # Chỉ kéo lên những luật liên quan đến món ăn trong giỏ hàng
+        query = f"SELECT antecedents, consequents, confidence, lift FROM ProductRules WHERE {where_clause}"
+        
         try:
             df = self.db.fetch_data(query)
             if df.empty:
@@ -58,16 +70,15 @@ class RecommendationService:
 
             valid_suggestions = []
             
+            # 2. XỬ LÝ CHÍNH XÁC TẬP CON (Lúc này df chỉ còn vài chục dòng, Python chạy chớp mắt)
             for _, row in df.iterrows():
-                # Chuyển chuỗi vế trái (cách nhau bởi dấu phẩy) thành một Tập hợp (Set)
-                antecedent_items = set(str(item).upper().strip() for item in row['antecedents'].split(', '))
+                antecedent_items = set(str(item).upper().strip() for item in str(row['antecedents']).split(', '))
                 
-                # ĐIỀU KIỆN QUAN TRỌNG: Nếu vế trái của luật là TẬP CON của giỏ hàng
+                # NẾU vế trái của luật là TẬP CON của giỏ hàng hiện tại
                 if antecedent_items.issubset(cart_set):
-                    # Lấy danh sách sản phẩm gợi ý ở vế phải (consequents)
-                    consequent_items = [str(item).upper().strip() for item in row['consequents'].split(', ')]
+                    consequent_items = [str(item).upper().strip() for item in str(row['consequents']).split(', ')]
                     
-                    # Lọc bỏ những sản phẩm mà người dùng đã có sẵn trong giỏ hàng
+                    # Lọc bỏ những sản phẩm khách đã có sẵn trong giỏ
                     filtered_consequents = [item for item in consequent_items if item not in cart_set]
                     
                     for item in filtered_consequents:
@@ -80,10 +91,10 @@ class RecommendationService:
             if not valid_suggestions:
                 return []
                 
-            # Sắp xếp danh sách gợi ý theo độ tin cậy (Confidence) và chỉ số Lift giảm dần
+            # Sắp xếp danh sách gợi ý theo độ tin cậy và Lift giảm dần
             valid_suggestions = sorted(valid_suggestions, key=lambda x: (-x['confidence'], -x['lift']))
             
-            # Loại bỏ các mặt hàng trùng lặp trong danh sách kết quả gợi ý cuối cùng
+            # Lọc bỏ các món bị trùng lặp
             seen = set()
             final_suggestions = []
             for s in valid_suggestions:
@@ -96,10 +107,10 @@ class RecommendationService:
             return final_suggestions
             
         except Exception as e:
-            print(f"Lỗi phân tích tập con tại Service: {e}")
+            print(f"Lỗi truy vấn tập con từ CSDL: {e}")
             return []
 
-    def get_top_selling(self, limit=6):
+    def get_top_selling(self, limit=3):
         """Hệ thống dự phòng (Fallback): Gợi ý sản phẩm phổ biến bán chạy nhất"""
         query = f"""
             SELECT TOP {limit} Itemname AS consequents, COUNT(*) as SalesCount

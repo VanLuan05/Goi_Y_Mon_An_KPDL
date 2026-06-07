@@ -59,11 +59,11 @@ def add_to_cart():
     session['cart'] = cart
     
     # Lấy gợi ý bằng cách đọc file CSV (Tuyệt đối không dính lỗi ODBC Unicode)
-    suggestions = rec_service.get_suggestions(cart, limit=6)
+    suggestions = rec_service.get_suggestions(cart, limit=3)
     is_fallback = False
     
     if not suggestions:
-        suggestions = rec_service.get_top_selling(limit=6)
+        suggestions = rec_service.get_top_selling(limit=3)
         is_fallback = True
 
     return jsonify({
@@ -117,11 +117,11 @@ def view_cart():
     checkout_prob = rec_service.predict_checkout_probability(cart)
     
     # 3. Thuật toán Gợi ý mua kèm (FP-Growth)
-    suggestions = rec_service.get_suggestions(cart, limit=6)
+    suggestions = rec_service.get_suggestions(cart, limit=3)
     is_fallback = False
     
     if not suggestions and cart:
-        suggestions = rec_service.get_top_selling(limit=6)
+        suggestions = rec_service.get_top_selling(limit=4)
         is_fallback = True
         
     return render_template('cart.html', 
