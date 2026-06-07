@@ -1,3 +1,5 @@
+from turtle import pd
+
 from flask import Flask, render_template, request, session, redirect, url_for, jsonify
 from db_helper import DatabaseHelper
 from recommendation_service import RecommendationService
@@ -19,27 +21,61 @@ def admin_cluster():
 @app.route('/')
 def index():
     try:
-        # BẢN NÂNG CẤP: Lấy sản phẩm có luật trong bảng ProductRules
-        query_products = """
-            SELECT DISTINCT TOP 12 t.Itemname, t.Price 
-            FROM CleanedTransactions t
-            INNER JOIN ProductRules r ON r.antecedents = t.Itemname
-            WHERE t.Itemname IS NOT NULL
+        # 1. TRUY VẤN TẤT CẢ CÁC MÓN ĂN KÈM GIÁ (Siêu nhanh vì dùng GROUP BY)
+        # Sắp xếp theo SalesCount DESC để ưu tiên các món bán chạy nhất
+        query_all = """
+            SELECT Itemname, MAX(Price) as Price, COUNT(*) as SalesCount 
+            FROM CleanedTransactions 
+            WHERE Itemname IS NOT NULL 
+            GROUP BY Itemname 
+            ORDER BY SalesCount DESC
         """
-        df_products = db.fetch_data(query_products)
+        df_all = db.fetch_data(query_all)
         
-        if df_products.empty or len(df_products) < 12:
-            query_fallback = "SELECT DISTINCT TOP 12 Itemname, Price FROM CleanedTransactions WHERE Itemname IS NOT NULL"
-            df_products = db.fetch_data(query_fallback)
-
-        df_products['Price'] = df_products['Price'].round(2)
-        products = df_products.to_dict(orient='records')
+        # 2. LẤY DANH SÁCH MÓN ĂN CÓ LUẬT TỪ RAM (Đã IN HOA để chuẩn hóa so sánh)
+        valid_items_upper = set()
+        if rec_service.cached_rules:
+            for rule in rec_service.cached_rules:
+                for item in rule['antecedents']:
+                    valid_items_upper.add(item.upper())
+                    
+        # 3. LỌC DỮ LIỆU BẰNG PYTHON (Triệt tiêu 100% lỗi của SQL Server)
+        final_products = []
+        fallback_products = []
+        
+        for _, row in df_all.iterrows():
+            item_name = str(row['Itemname']).strip()
+            item_upper = item_name.upper()
+            
+            # Ép kiểu giá tiền cực kỳ an toàn (Bỏ qua lỗi to_numeric)
+            try:
+                price = float(row['Price'])
+            except:
+                price = 0.0
+                
+            product_dict = {'Itemname': item_name, 'Price': round(price, 2)}
+            
+            # Lưu 12 món bán chạy nhất làm danh sách dự phòng
+            if len(fallback_products) < 12:
+                fallback_products.append(product_dict)
+                
+            # NẾU món này có xuất hiện trong kho Luật trên RAM -> Cho hiển thị ra Web
+            if item_upper in valid_items_upper:
+                final_products.append(product_dict)
+                
+            # Chỉ lấy đủ 12 món có luật là dừng
+            if len(final_products) >= 12:
+                break
+                
+        # 4. CHỐT CHẶN CUỐI: Nếu không có luật nào khớp, dùng luôn 12 món bán chạy
+        if not final_products:
+            final_products = fallback_products
 
         # Thống kê tổng số bản ghi
         query_count = "SELECT COUNT(*) as total FROM CleanedTransactions"
         total_cleaned = db.fetch_data(query_count).iloc[0]['total']
         
-        return render_template('index.html', products=products, total_cleaned=total_cleaned)
+        return render_template('index.html', products=final_products, total_cleaned=total_cleaned)
     except Exception as e:
         return f"Lỗi hệ thống khởi chạy: {e}"
 
@@ -101,7 +137,7 @@ def admin_re_mine():
     
     # Kích hoạt hàm xử lý thuật toán cốt lõi
     result = execute_mining(min_support, min_confidence)
-    
+    rec_service.reload_rules()
     # ĐÃ FIX: Trả về chuẩn JSON cho trang Admin, bỏ mớ code giao diện giỏ hàng bị dán nhầm ở đây
     return jsonify(result)
 
