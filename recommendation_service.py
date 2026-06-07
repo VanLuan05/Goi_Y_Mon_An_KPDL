@@ -86,25 +86,25 @@ class RecommendationService:
     
     
     def classify_live_cart(self, cart_items):
-        """
-        Dự báo phân cụm hành vi cho Giỏ hàng hiện tại dựa trên khoảng cách Euclidean đến các tâm cụm.
-        """
         if not cart_items:
             return "Giỏ hàng trống"
             
         total_qty = len(cart_items) 
-        global_avg_price = 3.0 
+        global_avg_price = 4.0 
         total_spent = total_qty * global_avg_price
             
         try:
-            df_centroids = self.db.fetch_data("SELECT * FROM ClusterCentroids")
+            # GIẢI PHÁP TỐI THƯỢNG: Chỉ SELECT các cột số để không bao giờ bị lỗi Font tiếng Việt
+            query = "SELECT ClusterID, Centroid_Qty, Centroid_Spent FROM ClusterCentroids"
+            df_centroids = self.db.fetch_data(query)
+            
             if df_centroids.empty:
                 return "Hệ thống chưa phân cụm nền"
                 
-            best_cluster = None
+            best_cluster_id = None
             min_distance = float('inf')
             
-            # Tính toán khoảng cách Euclidean
+            # Tính toán khoảng cách
             for _, row in df_centroids.iterrows():
                 dist = np.sqrt(
                     (total_qty - row['Centroid_Qty'])**2 + 
@@ -113,9 +113,26 @@ class RecommendationService:
                 
                 if dist < min_distance:
                     min_distance = dist
-                    best_cluster = row['ClusterName']
+                    best_cluster_id = int(row['ClusterID'])
                     
-            return best_cluster
+            # TỰ ĐỘNG GÁN TÊN TRONG PYTHON BẰNG CÁCH SẮP XẾP TÂM CỤM
+            # Sắp xếp các cụm theo giá tiền từ thấp đến cao để đảm bảo luôn đúng tên
+            df_sorted = df_centroids.sort_values(by='Centroid_Spent')
+            
+            # Tạo từ điển map ID với Tên cực chuẩn
+            cluster_names_ordered = [
+                "Mua sắm Tiết kiệm (Giỏ nhỏ)", 
+                "Mua sắm Phổ thông (Tiêu chuẩn)", 
+                "Mua sắm Số lượng lớn (Bán sỉ)"
+            ]
+            
+            mapping_dict = {}
+            for idx, (index, row) in enumerate(df_sorted.iterrows()):
+                mapping_dict[int(row['ClusterID'])] = cluster_names_ordered[idx]
+                
+            # Trả về tên tiếng Việt chuẩn xác
+            return mapping_dict.get(best_cluster_id, "Mua sắm Tiết kiệm (Giỏ nhỏ)")
+            
         except Exception as e:
-            print(f"Lỗi tính khoảng cách phân cụm: {e}")
+            print(f"Lỗi TÍNH KHOẢNG CÁCH PHÂN CỤM K-MEANS: {e}")
             return "Mua sắm Tiết kiệm (Giỏ nhỏ)"

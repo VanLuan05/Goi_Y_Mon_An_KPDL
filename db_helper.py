@@ -1,7 +1,7 @@
 import pyodbc
 import pandas as pd
-import urllib # Tách urllib ra dòng riêng
-from sqlalchemy import create_engine
+import urllib
+from sqlalchemy import create_engine, event
 
 class DatabaseHelper:
     def __init__(self):
@@ -14,19 +14,25 @@ class DatabaseHelper:
         return pyodbc.connect(self.conn_str)
 
     def get_engine(self):
-        # Sử dụng urllib.parse để xử lý chuỗi kết nối
         params = urllib.parse.quote_plus(self.conn_str)
-        return create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+        engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}", fast_executemany=True)
+        
+        @event.listens_for(engine, 'connect')
+        def receive_connect(dbapi_connection, connection_record):
+            # CHỈNH SỬA TẠI ĐÂY: Sử dụng utf-16le cho dữ liệu NVARCHAR (SQL_WCHAR) của SQL Server
+            dbapi_connection.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-16le')
+            dbapi_connection.setdecoding(pyodbc.SQL_CHAR, encoding='utf-8')
+            dbapi_connection.setencoding(encoding='utf-8')
+            
+        return engine
 
     def fetch_data(self, query):
         engine = self.get_engine()
         return pd.read_sql(query, engine)
 
-# --- Đoạn code chạy thử để kiểm tra ---
 if __name__ == "__main__":
     db = DatabaseHelper()
     try:
-        # Thử lấy danh sách quốc gia duy nhất trong dữ liệu
         df = db.fetch_data("SELECT DISTINCT TOP 5 Country FROM Transactions")
         print("--- KẾT NỐI VÀ LẤY DỮ LIỆU THÀNH CÔNG ---")
         print(df)
