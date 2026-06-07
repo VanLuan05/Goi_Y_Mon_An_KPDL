@@ -80,6 +80,29 @@ def add_to_cart():
 
 @app.route('/cart')
 def view_cart():
+    """Trang xem chi tiết giỏ hàng và hiển thị kết quả phân tích AI (K-Means & K-NN)"""
+    cart = session.get('cart', [])
+    
+    # 1. Thuật toán Gom cụm (K-Means)
+    cart_cluster = rec_service.classify_live_cart(cart)
+    
+    # 2. Thuật toán Phân lớp (K-NN) - Dự báo chốt đơn
+    checkout_prob = rec_service.predict_checkout_probability(cart)
+    
+    # 3. Thuật toán Gợi ý mua kèm (FP-Growth)
+    suggestions = rec_service.get_suggestions(cart, limit=4)
+    is_fallback = False
+    
+    if not suggestions and cart:
+        suggestions = rec_service.get_top_selling(limit=3)
+        is_fallback = True
+        
+    return render_template('cart.html', 
+                           cart=cart, 
+                           suggestions=suggestions, 
+                           is_fallback=is_fallback,
+                           cart_cluster=cart_cluster,
+                           checkout_prob=checkout_prob)
     """Trang xem chi tiết giỏ hàng và hiển thị kết quả phân cụm K-Means thực tế"""
     cart = session.get('cart', [])
     
@@ -129,6 +152,28 @@ def admin_re_mine():
     # Kích hoạt hàm xử lý thuật toán cốt lõi
     result = execute_mining(min_support, min_confidence)
     
+
+    """Trang xem chi tiết giỏ hàng và hiển thị kết quả phân tích AI"""
+    cart = session.get('cart', [])
+    
+    # 1. Thuật toán Gom cụm (K-Means)
+    cart_cluster = rec_service.classify_live_cart(cart)
+    
+    # 2. THUẬT TOÁN PHÂN LỚP (K-NN) - DỰ BÁO CHỐT ĐƠN
+    checkout_prob = rec_service.predict_checkout_probability(cart)
+    
+    suggestions = rec_service.get_suggestions(cart, limit=4)
+    is_fallback = False
+    if not suggestions and cart:
+        suggestions = rec_service.get_top_selling(limit=3)
+        is_fallback = True
+        
+    return render_template('cart.html', 
+                           cart=cart, 
+                           suggestions=suggestions, 
+                           is_fallback=is_fallback,
+                           cart_cluster=cart_cluster,
+                           checkout_prob=checkout_prob) # Cập nhật truyền biến dự báo ra web
     return jsonify(result)
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

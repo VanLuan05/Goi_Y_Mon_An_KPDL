@@ -94,13 +94,37 @@
                             <span class="text-muted small">Tổng mặt hàng:</span>
                             <span class="fw-bold text-dark fs-5">{{ cart|length }}</span>
                         </div>
-                        <h5 class="fw-bold mb-3">Thông tin đơn hàng</h5>
-<div class="p-3 mb-3 rounded-3" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
-    <div class="text-muted small mb-1" style="font-size: 0.75rem; font-weight: 600;">PHÂN KHÚC GIỎ HÀNG (K-MEANS)</div>
-    <div class="fw-bold text-indigo d-flex align-items-center gap-2" style="color: #4f46e5; font-size: 0.9rem;">
-        <span style="width: 8px; height: 8px; background: #4f46e5; border-radius: 50%;"></span>
-        {{ cart_cluster }}
-    </div>
+                        
+                        <h5 class="fw-bold mb-3" style="font-size: 1rem; letter-spacing: -0.2px;">Thông tin đơn hàng</h5>
+                        
+                        <div class="p-3 mb-3 rounded-3" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+                            <div class="text-muted small mb-1" style="font-size: 0.75rem; font-weight: 600;">PHÂN KHÚC GIỎ HÀNG (K-MEANS)</div>
+                            <div class="fw-bold text-indigo d-flex align-items-center gap-2" style="color: #4f46e5; font-size: 0.9rem;">
+                                <span style="width: 8px; height: 8px; background: #4f46e5; border-radius: 50%;"></span>
+                                {{ cart_cluster }}
+                            </div>
+                        </div>
+
+                        <div class="p-3 mb-4 rounded-3" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="text-muted small" style="font-size: 0.75rem; font-weight: 600;">DỰ BÁO XU HƯỚNG CHỐT ĐƠN (K-NN)</span>
+                                <span class="fw-bold {% if checkout_prob >= 70 %}text-success{% elif checkout_prob >= 40 %}text-warning{% else %}text-danger{% endif %}" style="font-size: 0.9rem;">
+                                    {{ checkout_prob }}%
+                                </span>
+                            </div>
+                            
+                            
+                            <div class="text-muted" style="font-size: 0.75rem; line-height: 1.4;">
+                                {% if checkout_prob >= 70 %}
+                                    <span class="text-success">●</span> Khách hàng có nhu cầu thực tế cao, khả năng thanh toán khả quan.
+                                {% elif checkout_prob >= 40 %}
+                                    <span class="text-warning">●</span> Tỷ lệ chốt đơn trung bình. Khuyên dùng: <strong>Tặng mã Freeship</strong>.
+                                {% else %}
+                                    <span class="text-danger">●</span> Cảnh báo: Giỏ hàng quá nhỏ hoặc có dấu hiệu spam, tỷ lệ rời bỏ cao.
+                                {% endif %}
+                            </div>
+                        </div>
+
                         <button class="btn-checkout" onclick="alert('Đơn hàng mô phỏng đã hoàn tất giao dịch! Bản ghi này sẽ được ghi nhận vào kho dữ liệu thô phục vụ tái học tập tri thức KDD.')">
                             Tiến hành thanh toán
                         </button>
@@ -110,5 +134,16 @@
 
         </div>
     </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            var progressBar = document.getElementById('knn-progress-bar');
+            if (progressBar) {
+                progressBar.style.width = "{{ checkout_prob }}%";
+            }
+        });
+    </script>
+
+</body>
+</html>
 </body>
 </html>

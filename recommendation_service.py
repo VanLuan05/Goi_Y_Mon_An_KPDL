@@ -1,10 +1,42 @@
 import numpy as np
-
+import pandas as pd
+from sklearn.neighbors import KNeighborsClassifier
 from db_helper import DatabaseHelper
 
 class RecommendationService:
     def __init__(self):
         self.db = DatabaseHelper()
+        self.knn_model = None
+        self._train_checkout_classifier() # Tự động huấn luyện mô hình khi Server bật
+
+    def _train_checkout_classifier(self):
+        """
+        Huấn luyện mô hình K-NN Phân lớp (Classification) bằng Dữ liệu giả lập (Synthetic Data).
+        Khắc phục tình trạng mất cân bằng dữ liệu (Chỉ có hóa đơn thành công trong CSDL gốc).
+        """
+        np.random.seed(42)
+        # Lớp 1 (Thành công - Mua sắm hợp lý): Khách hàng chọn từ 8 đến 100 sản phẩm
+        qty_success = np.random.randint(8, 100, 400)
+        spent_success = qty_success * 4.0 + np.random.normal(0, 5, 400)
+        y_success = np.ones(400)
+
+        # Lớp 0 (Thất bại - Hủy giỏ): Khách hàng chọn lắt nhắt 1-4 món hoặc spam hơn 150 món
+        qty_fail_small = np.random.randint(1, 5, 200)
+        qty_fail_large = np.random.randint(150, 300, 100)
+        qty_fail = np.concatenate([qty_fail_small, qty_fail_large])
+        spent_fail = qty_fail * 4.0 + np.random.normal(0, 5, 300)
+        y_fail = np.zeros(300)
+
+        # Gộp dữ liệu thành Ma trận Đặc trưng (X) và Nhãn (y)
+        X_train = np.vstack([
+            np.column_stack([qty_success, spent_success]),
+            np.column_stack([qty_fail, spent_fail])
+        ])
+        y_train = np.concatenate([y_success, y_fail])
+
+        # Huấn luyện K-NN với K=15 để làm mịn đường biên và phần trăm xác suất
+        self.knn_model = KNeighborsClassifier(n_neighbors=15)
+        self.knn_model.fit(X_train, y_train)
 
     def get_suggestions(self, cart_items, limit=5):
         """
@@ -136,3 +168,22 @@ class RecommendationService:
         except Exception as e:
             print(f"Lỗi TÍNH KHOẢNG CÁCH PHÂN CỤM K-MEANS: {e}")
             return "Mua sắm Tiết kiệm (Giỏ nhỏ)"
+    
+    def predict_checkout_probability(self, cart_items):
+        """
+        Dự báo xác suất khách hàng sẽ nhấn nút Thanh Toán dựa trên mô hình K-NN.
+        """
+        if not cart_items:
+            return 0.0
+            
+        total_qty = len(cart_items) 
+        global_avg_price = 4.0 
+        total_spent = total_qty * global_avg_price
+        
+        try:
+            # Trích xuất xác suất thuộc Lớp 1 (Chốt đơn thành công)
+            prob = self.knn_model.predict_proba([[total_qty, total_spent]])[0][1]
+            return round(prob * 100, 1)
+        except Exception as e:
+            print(f"Lỗi dự báo K-NN: {e}")
+            return 0.0
