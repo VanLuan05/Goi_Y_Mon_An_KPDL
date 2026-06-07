@@ -48,9 +48,27 @@ def execute_mining(min_support_val=0.015, min_confidence_val=0.5):
             "status": "Không tìm thấy tập phổ biến nào."
         }
 
-    rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence_val)
-    rules = rules[rules['lift'] > 1] 
-    rules = rules.sort_values(['confidence', 'lift'], ascending=[False, False])
+    rules = association_rules(
+        frequent_itemsets,
+        metric="confidence",
+        min_threshold=min_confidence_val
+    )
+
+# Chỉ giữ luật 1 sản phẩm -> 1 sản phẩm
+    rules = rules[
+        (rules['antecedents'].apply(len) == 1)
+        &
+        (rules['consequents'].apply(len) == 1)
+]
+
+# Lift > 1
+    rules = rules[rules['lift'] > 1]
+
+# Sắp xếp theo độ mạnh
+    rules = rules.sort_values(
+        ['confidence', 'lift'],
+        ascending=[False, False]
+)
     rules_count = len(rules)
 
     # 3. Xuất file CSV

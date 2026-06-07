@@ -79,12 +79,18 @@ class RecommendationService:
             return []
             
         cart_set = set(str(item).upper().strip() for item in cart_items)
+        print("===== CART =====")
+        print(cart_set)
         valid_suggestions = []
         
         try:
             for rule in self.cached_rules:
                 # TOÁN HỌC TẬP CON (issubset) được chạy thẳng trên RAM mất ~0.0001s
                 if rule['antecedents'].issubset(cart_set):
+
+                    print("MATCH RULE")
+                    print(rule['antecedents'])
+                    print(rule['consequents'])
                     filtered_consequents = [item for item in rule['consequents'] if item not in cart_set]
                     
                     for item in filtered_consequents:

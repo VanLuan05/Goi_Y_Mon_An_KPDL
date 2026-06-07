@@ -16,14 +16,6 @@ class DatabaseHelper:
     def get_engine(self):
         params = urllib.parse.quote_plus(self.conn_str)
         engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}", fast_executemany=True)
-        
-        @event.listens_for(engine, 'connect')
-        def receive_connect(dbapi_connection, connection_record):
-            # CHỈNH SỬA TẠI ĐÂY: Sử dụng utf-16le cho dữ liệu NVARCHAR (SQL_WCHAR) của SQL Server
-            dbapi_connection.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-16le')
-            dbapi_connection.setdecoding(pyodbc.SQL_CHAR, encoding='utf-8')
-            dbapi_connection.setencoding(encoding='utf-8')
-            
         return engine
 
     def fetch_data(self, query):
