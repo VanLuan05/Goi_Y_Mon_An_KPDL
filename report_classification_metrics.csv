@@ -1,0 +1,4 @@
+﻿Mô hình,Accuracy (%),Precision (%),Recall (%),F1-Score (%)
+K-Nearest Neighbors (K-NN),99.29,100.0,98.86,99.43
+Decision Tree (Cây quyết định),100.0,100.0,100.0,100.0
+Logistic Regression,77.14,73.33,100.0,84.62
