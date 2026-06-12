@@ -5,7 +5,8 @@ from db_helper import DatabaseHelper
 from recommendation_service import RecommendationService
 from fp_growth_mining import execute_mining
 from order_clustering import execute_clustering
-
+from datetime import datetime
+import random
 app = Flask(__name__)
 app.secret_key = 'huit_datamining_project_2026'
 
@@ -13,6 +14,47 @@ db = DatabaseHelper()
 rec_service = RecommendationService()
 translation_dict = {}
 
+# thanh toán và lưu vào SQL Server
+@app.route('/checkout', methods=['POST'])
+def checkout():
+
+    cart = session.get('cart', [])
+
+    if not cart:
+        return jsonify({
+            'success': False,
+            'message': 'Giỏ hàng trống'
+        })
+
+    try:
+
+        bill_no = f"WEB_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+        for item in cart:
+
+            sql = f"""
+            INSERT INTO Orders
+            (BillNo, Itemname)
+            VALUES
+            (N'{bill_no}', N'{item}')
+            """
+
+            db.execute_query(sql)
+
+        session.pop('cart', None)
+
+        return jsonify({
+            'success': True,
+            'bill_no': bill_no
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        })
+# API Endpoint ra lệnh chạy thuật toán K-Means trực tuyến từ trang Admin
 @app.route('/admin/cluster', methods=['POST'])
 def admin_cluster():
     """API Endpoint ra lệnh chạy thuật toán K-Means trực tuyến từ trang Admin"""
@@ -108,8 +150,13 @@ def index():
             final_products = fallback_products
 
         # Thống kê tổng số bản ghi
-        query_count = "SELECT COUNT(*) as total FROM CleanedTransactions"
-        total_cleaned = db.fetch_data(query_count).iloc[0]['total']
+        history_count = db.fetch_data(
+            "SELECT COUNT(*) AS total FROM CleanedTransactions"
+        ).iloc[0]['total']
+
+        orders_count = db.fetch_data(
+            "SELECT COUNT(*) AS total FROM Orders"
+        ).iloc[0]['total']
         
         print("Số sản phẩm trong luật:", len(valid_items_upper))
         print("Số sản phẩm hiển thị:", len(final_products))
@@ -125,10 +172,12 @@ def index():
         return render_template(
             'index.html',
             products=paginated_products,
-            total_cleaned=total_cleaned,
+            total_cleaned=history_count,
             page=page,
-            total_pages=total_pages
-    )
+            total_pages=total_pages,
+            history_count=history_count,
+            orders_count=orders_count
+        )
     except Exception as e:
         return f"Lỗi hệ thống khởi chạy: {e}"
 

@@ -293,7 +293,16 @@
     <div class="position-fixed bottom-0 end-0 m-4 z-3">
         <div class="system-pill">
             <span class="status-indicator"></span>
-            <span>FP-Growth Active: <strong>{{ "{:,}".format(total_cleaned) }}</strong> dòng sạch</span>
+            <span>
+                FP-Growth Active:
+                {{ "{:,}".format(history_count + orders_count) }} dòng
+            </span>
+
+            <small>
+                (Lịch sử: {{ "{:,}".format(history_count) }}
+                |
+                Khách hàng mới: {{ "{:,}".format(orders_count) }})
+            </small>
         </div>
     </div>
     <div class="pagination">

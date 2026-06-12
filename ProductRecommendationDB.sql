@@ -18,6 +18,14 @@ CREATE TABLE Transactions
     Country NVARCHAR(100)
 );
 
+CREATE TABLE Orders
+(
+    OrderID INT IDENTITY(1,1) PRIMARY KEY,
+    BillNo NVARCHAR(100),
+    Itemname NVARCHAR(500),
+    CreatedDate DATETIME DEFAULT GETDATE()
+)
+
 SELECT COUNT(*) FROM Transactions
 SELECT COUNT(*) FROM Transactions WHERE Itemname IS NULL
 SELECT TOP 10 Date FROM Transactions

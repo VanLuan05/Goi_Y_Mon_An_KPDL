@@ -14,7 +14,15 @@ def execute_mining(min_support_val=0.015, min_confidence_val=0.5):
     Đã tích hợp cơ chế bảo vệ mã hóa tiếng Việt (NVARCHAR) khi lưu vào CSDL.
     """
     db = DatabaseHelper()
-    query = "SELECT BillNo, Itemname FROM CleanedTransactions"
+    query = """
+    SELECT BillNo, Itemname
+    FROM CleanedTransactions
+
+    UNION ALL
+
+    SELECT BillNo, Itemname
+    FROM Orders
+        """
     df = db.fetch_data(query)
 
     if df.empty:
@@ -110,12 +118,37 @@ def execute_mining(min_support_val=0.015, min_confidence_val=0.5):
         except Exception as e:
             print(f"Lỗi lưu CSDL ngầm: {e}")
 
+    # Đếm số sản phẩm tham gia luật
+    products_in_rules = set()
+
+    for _, row in rules.iterrows():
+        for item in row['antecedents']:
+            products_in_rules.add(item)
+
+        for item in row['consequents']:
+            products_in_rules.add(item)
+
+    products_count = len(products_in_rules)
+
+# Đếm dữ liệu
+    history_count = db.fetch_data(
+        "SELECT COUNT(*) AS total FROM CleanedTransactions"
+    ).iloc[0]['total']
+
+    orders_count = db.fetch_data(
+        "SELECT COUNT(*) AS total FROM Orders"
+    ).iloc[0]['total']
+
     return {
         "execution_time": round(execution_time, 4),
         "frequent_count": frequent_count,
         "rules_count": rules_count,
+        "products_count": products_count,
+        "history_count": int(history_count),
+        "orders_count": int(orders_count),
+        "total_data": int(history_count + orders_count),
         "status": "Khai phá dữ liệu và đồng bộ tri thức thành công!"
-    }
+}
 
 if __name__ == '__main__':
     res = execute_mining(0.015, 0.5)

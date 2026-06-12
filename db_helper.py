@@ -22,6 +22,19 @@ class DatabaseHelper:
         engine = self.get_engine()
         return pd.read_sql(query, engine)
 
+    def execute_query(self, query):
+
+        conn = self.get_connection()
+
+        cursor = conn.cursor()
+
+        cursor.execute(query)
+
+        conn.commit()
+
+        cursor.close()
+
+        conn.close()
 if __name__ == "__main__":
     db = DatabaseHelper()
     try:
