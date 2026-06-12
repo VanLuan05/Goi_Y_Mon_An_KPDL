@@ -1,4 +1,4 @@
-from turtle import pd
+from tracemalloc import start
 
 from flask import Flask, render_template, request, session, redirect, url_for, jsonify
 from db_helper import DatabaseHelper
@@ -11,15 +11,42 @@ app.secret_key = 'huit_datamining_project_2026'
 
 db = DatabaseHelper()
 rec_service = RecommendationService()
+translation_dict = {}
 
 @app.route('/admin/cluster', methods=['POST'])
 def admin_cluster():
     """API Endpoint ra lệnh chạy thuật toán K-Means trực tuyến từ trang Admin"""
     result = execute_clustering()
     return jsonify(result)
+# Hàm nạp từ điển dịch tiếng Việt vào RAM để sử dụng cho toàn bộ ứng dụng
+def load_translation_dictionary():
+    global translation_dict
 
+    try:
+        import pandas as pd
+
+        df_trans = pd.read_excel('chuyensangTV.xlsx')
+
+        translation_dict = dict(
+            zip(
+                df_trans['Itemname'].astype(str).str.strip(),
+                df_trans['Tên sản phẩm'].astype(str).str.strip()
+            )
+        )
+
+        print(
+            f"✅ ĐÃ NẠP TỪ ĐIỂN VÀO RAM: {len(translation_dict)} sản phẩm"
+        )
+
+    except Exception as e:
+        print(f"❌ Lỗi nạp từ điển: {e}")
+        translation_dict = {}
+# Gọi hàm nạp từ điển ngay khi khởi động ứng dụng
 @app.route('/')
 def index():
+    print("INDEX LOADED")
+    page = request.args.get('page', 1, type=int)
+    per_page = 24
     try:
         # 1. TRUY VẤN TẤT CẢ CÁC MÓN ĂN KÈM GIÁ (Siêu nhanh vì dùng GROUP BY)
         # Sắp xếp theo SalesCount DESC để ưu tiên các món bán chạy nhất
@@ -34,17 +61,28 @@ def index():
         
         # 2. LẤY DANH SÁCH MÓN ĂN CÓ LUẬT TỪ RAM (Đã IN HOA để chuẩn hóa so sánh)
         valid_items_upper = set()
+
         if rec_service.cached_rules:
             for rule in rec_service.cached_rules:
+
                 for item in rule['antecedents']:
                     valid_items_upper.add(item.upper())
+
+                for item in rule['consequents']:
+                    valid_items_upper.add(item.upper())
                     
-        # 3. LỌC DỮ LIỆU BẰNG PYTHON (Triệt tiêu 100% lỗi của SQL Server)
+        dict_trans = translation_dict
+
         final_products = []
         fallback_products = []
         
         for _, row in df_all.iterrows():
-            item_name = str(row['Itemname']).strip()
+            eng_name = str(row['Itemname']).strip()
+            
+            # KHI TRÍCH XUẤT TÊN: Tra từ điển ngay lập tức. Nếu có tiếng Anh thì đổi sang tiếng Việt.
+            item_name = dict_trans.get(eng_name, eng_name)
+            
+            # Lúc này item_upper đã là TIẾNG VIỆT VIẾT HOA
             item_upper = item_name.upper()
             
             # Ép kiểu giá tiền cực kỳ an toàn (Bỏ qua lỗi to_numeric)
@@ -55,17 +93,15 @@ def index():
                 
             product_dict = {'Itemname': item_name, 'Price': round(price, 2)}
             
-            # Lưu 12 món bán chạy nhất làm danh sách dự phòng
-            if len(fallback_products) < 12:
+            # Lưu 24 món bán chạy nhất làm danh sách dự phòng
+            if len(fallback_products) < 24:
                 fallback_products.append(product_dict)
                 
             # NẾU món này có xuất hiện trong kho Luật trên RAM -> Cho hiển thị ra Web
             if item_upper in valid_items_upper:
                 final_products.append(product_dict)
                 
-            # Chỉ lấy đủ 12 món có luật là dừng
-            if len(final_products) >= 12:
-                break
+           
                 
         # 4. CHỐT CHẶN CUỐI: Nếu không có luật nào khớp, dùng luôn 12 món bán chạy
         if not final_products:
@@ -75,7 +111,24 @@ def index():
         query_count = "SELECT COUNT(*) as total FROM CleanedTransactions"
         total_cleaned = db.fetch_data(query_count).iloc[0]['total']
         
-        return render_template('index.html', products=final_products, total_cleaned=total_cleaned)
+        print("Số sản phẩm trong luật:", len(valid_items_upper))
+        print("Số sản phẩm hiển thị:", len(final_products))
+        total_products = len(final_products)
+
+        start = (page - 1) * per_page
+        end = start + per_page
+
+        paginated_products = final_products[start:end]
+
+        total_pages = (total_products + per_page - 1) // per_page
+
+        return render_template(
+            'index.html',
+            products=paginated_products,
+            total_cleaned=total_cleaned,
+            page=page,
+            total_pages=total_pages
+    )
     except Exception as e:
         return f"Lỗi hệ thống khởi chạy: {e}"
 
@@ -168,7 +221,8 @@ def view_cart():
                            suggestions=suggestions, 
                            is_fallback=is_fallback,
                            cart_cluster=cart_cluster,
-                           checkout_prob=checkout_prob)
 
+                          checkout_prob=checkout_prob)
+load_translation_dictionary()
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
